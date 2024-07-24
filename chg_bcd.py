@@ -9,8 +9,8 @@ def get_filename(filepath):
     for filename in os.listdir(filepath):
         if filename.lower().endswith('.xlsx'):
             return filename
-
-excel_file_path = get_filename(r'C:\Users\dell\Desktop')
+user_name = input("enter you user name")
+excel_file_path = get_filename(user_name)
 
 print(excel_file_path)
 #excel_file_path 
