@@ -15,7 +15,7 @@ class StockApp(ctk.CTk):
         self.default_period = "1y"
         self.default_interval = "1d"
         self.nifty_50_symbols = [
-            "ADANIPORTS.NS", "ASIANPAINT.NS", "AXISBANK.NS", "BAJAJ-AUTO.NS", "BAJFINANCE.NS",
+            "^nsebank","^nsei","ADANIPORTS.NS", "ASIANPAINT.NS", "AXISBANK.NS", "BAJAJ-AUTO.NS", "BAJFINANCE.NS",
             "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS", "INFRATEL.NS", "CIPLA.NS", "COALINDIA.NS",
             "DRREDDY.NS", "EICHERMOT.NS", "GAIL.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS",
             "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "HDFC.NS", "ITC.NS", "ICICIBANK.NS",
@@ -70,7 +70,7 @@ class StockApp(ctk.CTk):
                 data = yf.download(symbol, period=period, interval=interval)
                 self.output_text.insert("2.0", f"Data fetched for {symbol}\n")
                 
-                demand_zones, supply_zones = self.detect_zones(data)
+                demand_zones, supply_zones = self.detect_zones(symbol, data)
                 for zone in demand_zones:
                     self.all_demand_zones.append((symbol, zone[0], zone[1], zone[2], zone[3]))
                 for zone in supply_zones:
@@ -78,7 +78,7 @@ class StockApp(ctk.CTk):
         else:
             self.output_text.insert("1.0", "Please enter valid period and interval.\n")
     
-    def detect_zones(self, data):
+    def detect_zones(self, symbol, data):
         demand_zones = []
         supply_zones = []
         
@@ -86,6 +86,9 @@ class StockApp(ctk.CTk):
         data['Body_Size'] = abs(data['Close'] - data['Open'])
         data['Exciting'] = (data['Body_Size'] / data['Candle_Range']) > 0.55
         data['Base'] = (data['Body_Size'] / data['Candle_Range']) < 0.45
+        
+        print(f"\nProcessing {symbol}...")
+        print(data[['Open', 'High', 'Low', 'Close', 'Exciting', 'Base']].tail(10))
         
         i = 0
         while i < len(data) - 2:
@@ -97,10 +100,12 @@ class StockApp(ctk.CTk):
                     j += 1
                 if base_count > 0 and j < len(data) and data['Exciting'].iloc[j]:
                     zone_tested = self.is_zone_tested(data, i + 1, j - 1)
-                    if data['Close'].iloc[j] > data['Open'].iloc[j]:
-                        demand_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, zone_tested))
-                    elif data['Close'].iloc[j] < data['Open'].iloc[j]:
+                    if data['Close'].iloc[j] < data['Open'].iloc[j]:
                         supply_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, zone_tested))
+                        print(f"Supply Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {zone_tested}")
+                    else:
+                        demand_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, zone_tested))
+                        print(f"Demand Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {zone_tested}")
                 i = j + 1
             else:
                 i += 1
@@ -132,8 +137,18 @@ class StockApp(ctk.CTk):
             if stock not in latest_supply_zones or date > latest_supply_zones[stock][1]:
                 latest_supply_zones[stock] = zone
         
-        latest_zones = list(latest_demand_zones.values()) + list(latest_supply_zones.values())
-        self.show_zones_in_table(latest_zones, latest_zones)
+        latest_demand_zones = list(latest_demand_zones.values())
+        latest_supply_zones = list(latest_supply_zones.values())
+        
+        print("\nLatest Demand Zones:")
+        for zone in latest_demand_zones:
+            print(f"{zone[0]} | Date: {zone[1]} | Price: {zone[2]} | Base Candles: {zone[3]} | Tested: {'Yes' if zone[4] else 'No'}")
+        
+        print("\nLatest Supply Zones:")
+        for zone in latest_supply_zones:
+            print(f"{zone[0]} | Date: {zone[1]} | Price: {zone[2]} | Base Candles: {zone[3]} | Tested: {'Yes' if zone[4] else 'No'}")
+        
+        self.show_zones_in_table(latest_demand_zones, latest_supply_zones)
     
     def show_zones_in_table(self, demand_zones, supply_zones):
         table_window = ctk.CTkToplevel(self)
