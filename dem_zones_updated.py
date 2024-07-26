@@ -15,7 +15,7 @@ class StockApp(ctk.CTk):
         self.default_period = "1y"
         self.default_interval = "1d"
         self.nifty_50_symbols = [
-            "^nsebank","^nsei","ADANIPORTS.NS", "ASIANPAINT.NS", "AXISBANK.NS", "BAJAJ-AUTO.NS", "BAJFINANCE.NS",
+            "ADANIPORTS.NS", "ASIANPAINT.NS", "AXISBANK.NS", "BAJAJ-AUTO.NS", "BAJFINANCE.NS",
             "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS", "INFRATEL.NS", "CIPLA.NS", "COALINDIA.NS",
             "DRREDDY.NS", "EICHERMOT.NS", "GAIL.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS",
             "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "HDFC.NS", "ITC.NS", "ICICIBANK.NS",
@@ -99,23 +99,30 @@ class StockApp(ctk.CTk):
                     base_count += 1
                     j += 1
                 if base_count > 0 and j < len(data) and data['Exciting'].iloc[j]:
-                    zone_tested = self.is_zone_tested(data, i + 1, j - 1)
+                    is_tested = self.is_zone_tested(data, i + 1, j - 1, data['Close'].iloc[j] < data['Open'].iloc[j])
                     if data['Close'].iloc[j] < data['Open'].iloc[j]:
-                        supply_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, zone_tested))
-                        print(f"Supply Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {zone_tested}")
+                        supply_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, is_tested))
+                        print(f"Supply Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {is_tested}")
                     else:
-                        demand_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, zone_tested))
-                        print(f"Demand Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {zone_tested}")
+                        demand_zones.append((data.index[i + 1], data['Close'].iloc[i + 1], base_count, is_tested))
+                        print(f"Demand Zone Detected: {data.index[i + 1]} | Open: {data['Open'].iloc[i + 1]} | Close: {data['Close'].iloc[i + 1]} | Base Candles: {base_count} | Tested: {is_tested}")
                 i = j + 1
             else:
                 i += 1
         
         return demand_zones, supply_zones
     
-    def is_zone_tested(self, data, start_index, end_index):
+    def is_zone_tested(self, data, start_index, end_index, is_supply):
         for j in range(end_index + 1, len(data)):
-            if data['Low'].iloc[j] <= data['Close'].iloc[start_index] <= data['High'].iloc[j]:
-                return True
+            for k in range(start_index, end_index + 1):
+                base_open = data['Open'].iloc[k]
+                base_close = data['Close'].iloc[k]
+                if is_supply:
+                    if data['Low'].iloc[j] <= base_open <= data['High'].iloc[j] or data['Low'].iloc[j] <= base_close <= data['High'].iloc[j]:
+                        return True
+                else:
+                    if data['Low'].iloc[j] <= base_open <= data['High'].iloc[j] or data['Low'].iloc[j] <= base_close <= data['High'].iloc[j]:
+                        return True
         return False
     
     def show_all_zones(self):
