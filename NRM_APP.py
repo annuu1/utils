@@ -954,5 +954,6 @@ class MethodsHandler():
         
 
 if __name__ == "__main__":
+    print("Opening the App Please Wait......")
     app = ExcelFilterApp()
     app.mainloop()
