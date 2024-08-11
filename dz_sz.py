@@ -68,15 +68,26 @@ def detect_demand_zones(candles):
 
     return demand_zones
 
-def check_zone_tested(demand_zone, candles, start_index):
+def check_zone_tested_and_target(demand_zone, candles, start_index):
     base_candles = demand_zone[2]
-    highest_open = max(candle.open_price for candle in base_candles)
+    highest_high = max(candle.high for candle in base_candles)
     lowest_low = min(candle.low for candle in base_candles)
+    
+    # Determine the target for a 1:2 risk-reward ratio
+    risk = highest_high - lowest_low
+    target_price = highest_high + 2 * risk
 
     for k in range(start_index, len(candles)):
-        if candles[k].low <= highest_open and candles[k].high >= lowest_low:
-            return True  # Zone has been tested
-    return False  # Zone has not been tested
+        if candles[k].low <= highest_high and candles[k].high >= lowest_low:
+            # Check if the price hits the 1:2 target after entering the zone
+            for m in range(k, len(candles)):
+                if candles[m].high >= target_price:
+                    return 'pink'  # Zone achieved 1:2 target
+                if candles[m].low < lowest_low:
+                    return 'blue'  # Zone was broken before achieving target
+            break
+    
+    return 'green'  # Zone has not been tested
 
 # Convert fetched data to Candle objects
 candles = []
@@ -89,12 +100,14 @@ demand_zones = detect_demand_zones(candles)
 # Track the number of fresh and tested zones
 fresh_zones = 0
 tested_zones = 0
+target_zones = 0
 
 # Prepare the plot and mark demand zones with horizontal rays
 fig, ax = mpf.plot(data, type='candle', style='charles',
                    title='Bank Nifty with Detected Demand Zones',
                    ylabel='Price',
-                   volume=True,
+                   volume=False,  # Remove the volume
+                   tight_layout=True,  # Remove the margin
                    show_nontrading=True,
                    returnfig=True)
 
@@ -102,25 +115,28 @@ fig, ax = mpf.plot(data, type='candle', style='charles',
 for dz in demand_zones:
     base_candles = dz[2]
     
-    # Find the highest open price of the base candles and the lowest low
-    highest_open = max(candle.open_price for candle in base_candles)
+    # Find the highest high and lowest low of the base candles
+    highest_high = max(candle.high for candle in base_candles)
     lowest_low = min(candle.low for candle in base_candles)
     
-    # Check if the zone has been tested
+    # Check if the zone has been tested and if it met the 1:2 target
     start_index = dz[1] + 1  # Start checking after the leg-out candle
-    if check_zone_tested(dz, candles, start_index):
-        color = 'blue'
-        tested_zones += 1
-    else:
-        color = 'green'
+    color = check_zone_tested_and_target(dz, candles, start_index)
+    
+    if color == 'green':
         fresh_zones += 1
+    elif color == 'blue':
+        tested_zones += 1
+    elif color == 'pink':
+        target_zones += 1
     
     # Add horizontal rays (lines) from these points extending to the right
-    ax[0].hlines(y=highest_open, xmin=data.index[dz[0]], xmax=data.index[-1], color=color, linestyle='--', linewidth=1.5)
+    ax[0].hlines(y=highest_high, xmin=data.index[dz[0]], xmax=data.index[-1], color=color, linestyle='--', linewidth=1.5)
     ax[0].hlines(y=lowest_low, xmin=data.index[dz[0]], xmax=data.index[-1], color=color, linestyle='--', linewidth=1.5)
 
 plt.show()
 
-# Print the number of tested and fresh zones
+# Print the number of fresh, tested, and target zones
 print(f"Number of fresh zones: {fresh_zones}")
 print(f"Number of tested zones: {tested_zones}")
+print(f"Number of zones that met 1:2 target: {target_zones}")
