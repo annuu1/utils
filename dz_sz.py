@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # Fetch historical data for Bank Nifty
 symbol = "^NSEBANK"
-data = yf.download(symbol, start="2023-01-01", end="2023-12-31", interval="1d")
+data = yf.download(symbol, start="2023-01-01", end="2024-12-31", interval="1d")
 
 # Convert data to a list of Candle objects
 class Candle:
@@ -68,6 +68,16 @@ def detect_demand_zones(candles):
 
     return demand_zones
 
+def check_zone_tested(demand_zone, candles, start_index):
+    base_candles = demand_zone[2]
+    highest_open = max(candle.open_price for candle in base_candles)
+    lowest_low = min(candle.low for candle in base_candles)
+
+    for k in range(start_index, len(candles)):
+        if candles[k].low <= highest_open and candles[k].high >= lowest_low:
+            return True  # Zone has been tested
+    return False  # Zone has not been tested
+
 # Convert fetched data to Candle objects
 candles = []
 for idx, row in data.iterrows():
@@ -76,11 +86,9 @@ for idx, row in data.iterrows():
 # Detect demand zones
 demand_zones = detect_demand_zones(candles)
 
-# Display detected demand zones
-for dz in demand_zones:
-    legin_index = dz[0]
-    legout_index = dz[1]
-    print(f"Demand zone detected from {data.index[legin_index]} to {data.index[legout_index]}")
+# Track the number of fresh and tested zones
+fresh_zones = 0
+tested_zones = 0
 
 # Prepare the plot and mark demand zones with horizontal rays
 fig, ax = mpf.plot(data, type='candle', style='charles',
@@ -98,8 +106,21 @@ for dz in demand_zones:
     highest_open = max(candle.open_price for candle in base_candles)
     lowest_low = min(candle.low for candle in base_candles)
     
+    # Check if the zone has been tested
+    start_index = dz[1] + 1  # Start checking after the leg-out candle
+    if check_zone_tested(dz, candles, start_index):
+        color = 'blue'
+        tested_zones += 1
+    else:
+        color = 'green'
+        fresh_zones += 1
+    
     # Add horizontal rays (lines) from these points extending to the right
-    ax[0].hlines(y=highest_open, xmin=data.index[dz[0]], xmax=data.index[-1], color='green', linestyle='--', linewidth=1.5)
-    ax[0].hlines(y=lowest_low, xmin=data.index[dz[0]], xmax=data.index[-1], color='green', linestyle='--', linewidth=1.5)
+    ax[0].hlines(y=highest_open, xmin=data.index[dz[0]], xmax=data.index[-1], color=color, linestyle='--', linewidth=1.5)
+    ax[0].hlines(y=lowest_low, xmin=data.index[dz[0]], xmax=data.index[-1], color=color, linestyle='--', linewidth=1.5)
 
 plt.show()
+
+# Print the number of tested and fresh zones
+print(f"Number of fresh zones: {fresh_zones}")
+print(f"Number of tested zones: {tested_zones}")
