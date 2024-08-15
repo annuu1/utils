@@ -33,6 +33,10 @@ class Candle:
     def is_bullish(self):
         return self.close > self.open_price
 
+    @property
+    def upper_body(self):
+        return max(self.open_price, self.close)
+
 # -----------------------------
 # Demand Zone Detection Functions
 # -----------------------------
@@ -57,22 +61,25 @@ def detect_demand_zones(candles, min_body_percent_legin, max_body_percent_base, 
                 base_candles.append(candles[j])
                 j += 1
 
-            # Check if the required number of leg-out candles is found
-            legout_candles = []
-            while j < len(candles) and len(legout_candles) < min_legout_candles and is_legout_candle(candles[j], min_body_percent_legout):
-                legout_candles.append(candles[j])
-                j += 1
+            if base_candles:  # Ensure there are base candles before proceeding
+                # Check if the required number of leg-out candles is found
+                legout_candles = []
+                while j < len(candles) and len(legout_candles) < min_legout_candles and is_legout_candle(candles[j], min_body_percent_legout):
+                    legout_candles.append(candles[j])
+                    j += 1
 
-            if len(legout_candles) == min_legout_candles:
-                legin_candle = candles[i]
-                legout_candle = legout_candles[-1]  # Last leg-out candle
+                if len(legout_candles) == min_legout_candles:
+                    legin_candle = candles[i]
+                    legout_candle = legout_candles[-1]  # Last leg-out candle
 
-                if base_candles and (legout_candle.is_bullish and
-                                     legout_candle.close > legin_candle.high and
-                                     legout_candle.close > max(candle.high for candle in base_candles)):
-                    demand_zones.append((i, j-1, base_candles, legout_candles))
-            else:
-                j += 1  # Move to the next potential pattern after insufficient leg-out candles
+                    # Determine the upper boundary of the demand zone
+                    upper_body_lowest = min(c.upper_body for c in base_candles)
+                    zone_low = min(candle.low for candle in base_candles)
+
+                    if legout_candle.is_bullish and legout_candle.close > legin_candle.high and legout_candle.close > upper_body_lowest:
+                        demand_zones.append((i, j-1, base_candles, legout_candles, upper_body_lowest, zone_low))
+                else:
+                    j += 1  # Move to the next potential pattern after insufficient leg-out candles
 
             i = j  # Skip to the end of the current pattern
         else:
@@ -81,12 +88,11 @@ def detect_demand_zones(candles, min_body_percent_legin, max_body_percent_base, 
     return demand_zones
 
 def check_zone_tested_and_target(demand_zone, candles, start_index):
-    base_candles = demand_zone[2]
-    highest_high = max(candle.high for candle in base_candles)
-    lowest_low = min(candle.low for candle in base_candles)
+    upper_body_lowest = demand_zone[4]
+    zone_low = demand_zone[5]
     
-    risk = highest_high - lowest_low
-    target_price = highest_high + 2 * risk
+    risk = upper_body_lowest - zone_low
+    target_price = upper_body_lowest + 2 * risk
 
     zone_entered = False
     target_hit = False
@@ -95,13 +101,13 @@ def check_zone_tested_and_target(demand_zone, candles, start_index):
     for k in range(start_index, len(candles)):
         candle = candles[k]
         if not zone_entered:
-            if candle.low <= highest_high and candle.high >= lowest_low:
+            if candle.low <= upper_body_lowest and candle.high >= zone_low:
                 zone_entered = True
         if zone_entered and not target_hit:
             if candle.high >= target_price:
                 target_hit = True
                 break
-            if candle.low < lowest_low:
+            if candle.low < zone_low:
                 zone_broken = True
                 break
 
@@ -160,8 +166,8 @@ def run_analysis():
                     "Stock": stock,
                     "Leg-In Date": candles[dz[0]].date,
                     "Leg-Out Date": candles[dz[1]].date,
-                    "Zone High": max(c.high for c in dz[2]),
-                    "Zone Low": min(c.low for c in dz[2]),
+                    "Zone High (Upper Body Lowest)": dz[4],
+                    "Zone Low": dz[5],
                     "Zone Status": "Achieved Target" if color == 'pink' else "Tested" if color == 'blue' else "Fresh",
                 })
 
