@@ -1,4 +1,3 @@
-#aaa
 import customtkinter as ctk
 import pandas as pd
 import json
@@ -12,6 +11,9 @@ import win32com.client as win32
 from openpyxl.styles import NamedStyle, Font, PatternFill
 import comtypes.client
 from CTkMenuBar import *
+import time
+import pyautogui as pg
+import subprocess
 
 
 class ScrollableFrame(ctk.CTkFrame):
@@ -52,7 +54,7 @@ class MenuFrame(ctk.CTkFrame):
       
         self.dropdown1 = CustomDropdownMenu(widget=self.button_1)
         self.dropdown1.add_option(option="Add Isntruction", command=lambda: self.add_instruction())
-        self.dropdown1.add_option(option="Save", command=self.add_instruction)
+        self.dropdown1.add_option(option="Repeat command", command=self.repeat_command)
 
         self.dropdown1.add_separator()   
 
@@ -60,6 +62,8 @@ class MenuFrame(ctk.CTkFrame):
         self.dropdown2.add_option(option="ADD DB", command=lambda: self.add_db())
         self.dropdown2.add_option(option="Bar tender", command=lambda: self.formulate_btd())
         self.dropdown2.add_option(option="Corel Draw", command=self.formulate_crl)
+        self.dropdown2.add_option(option="print&import", command=self.print_import)
+
 
         self.dropdown2.add_separator() 
         
@@ -106,12 +110,23 @@ class MenuFrame(ctk.CTkFrame):
         
         with open(r'\\deepa\d\MAIL-2024\ExcelFilterApp\inst.json', 'w', encoding='utf-8') as json_file:
             json.dump(instructions, json_file, ensure_ascii=False, indent=4)
+    
+    def repeat_command(self):
+        method_handler = MethodsHandler(self.master)
+        method_handler.repeat_command()       
+    
+    def print_import(self):
+        method_handler = MethodsHandler(self.master)
+        method_handler.print_import()
+    
     def add_db(self):
         method_handler = MethodsHandler(self.master)
         method_handler.add_db()
+        
     def formulate_btd(self):
         method_handler = MethodsHandler(self.master)
         method_handler.formulate_bartender()
+        
     def formulate_crl(self):
         method_handler = MethodsHandler(self.master)
         method_handler.formulate_corel()
@@ -424,9 +439,11 @@ class ExcelFilterApp(ctk.CTk):
     def change_extension(self, file_path):
         base_name, _ = os.path.splitext(file_path)
         new_path = base_name + ".cdr"
+        
         return new_path
 
     def create_blank_cdr_file(self, output_path):
+        
         try:
             # Initialize CorelDRAW application
             coreldraw = comtypes.client.CreateObject("CorelDRAW.Application")
@@ -435,22 +452,50 @@ class ExcelFilterApp(ctk.CTk):
             doc = coreldraw.CreateDocument()
 
             # Save the document as a .cdr file
-            #cdr_filename = os.path.join(output_path, "blank_file.cdr")
-            doc.SaveAs(output_path)
+            if not os.path.isabs(output_path):
+                output_path = os.path.abspath(output_path)  # Ensure the path is absolute
 
-            print(f"Blank CorelDRAW file saved at: {output_path}")
+            # Save the document
+            doc.SaveAs(output_path)
+            print(f"Document saved as: {output_path}")
+
+            # Debug: Print list of open documents
+            open_docs = coreldraw.Documents
+            print(f"Number of open documents before closing: {len(open_docs)}")
+
+            # Close all open documents
+            for document in open_docs:
+                try:
+                    print(f"Closing document: {document.Name}")
+                    document.Close()
+                except Exception as close_error:
+                    print(f"Error closing document {document.Name}: {close_error}")
+                    
+            import win32com.client
+            # Replace forward slashes with backward slashes
+            output_path = output_path.replace('/', '\\')
+            
+            # Connect to CorelDRAW application
+            corel_app = win32com.client.Dispatch("CorelDRAW.Application")
+                    
+            corel_doc = corel_app.OpenDocument(output_path)
+
+            # Debug: Print list of open documents after closing
+            open_docs_after = coreldraw.Documents
+            print(f"Number of open documents after closing: {len(open_docs_after)}")
+
+            
         except Exception as e:
-            print(f"Error creating the file: {e}")
+            print(f"Error creating, closing, or opening the file: {e}")
     
     def filter_and_save(self):
         self.load_instuctions()
         if self.excel_data is None or self.sample_data is None:
             messagebox.showerror("Error", "Please load both sample and Excel files first.")
             return
-            # List of potential column names
-        potential_columns = ['STYLE DETAILS','style_code', 'Style Number', 'generic_number', 'generic_code','STYLE','SHORT_DESC', 'Style Code', 'Generic/Single article code','SHORT_ DESC', 'STYLE CODE','Stylecode', 'Vendor Part number', 'PO NO', 'PO No.']
 
-        
+        # List of potential column names
+        potential_columns = ['STYLE DETAILS','style_code', 'Style Number', 'generic_number', 'generic_code','STYLE','SHORT_DESC', 'Style Code', 'Generic/Single article code','SHORT_ DESC', 'STYLE CODE','Stylecode', 'Vendor Part number', 'PO NO', 'PO No.']
 
         brand = self.brand_var.get()
         party = self.party_var.get()
@@ -482,8 +527,7 @@ class ExcelFilterApp(ctk.CTk):
         self.settings[brand][party][artwork]['column_mapping'] = column_mapping
         self.save_settings()
         
-        formulae_handler =  FormulaeHandler(self.excel_data, self.brand_var.get(), self.artwork_var.get())
-
+        formulae_handler = FormulaeHandler(self.excel_data, self.brand_var.get(), self.artwork_var.get())
         self.excel_data = formulae_handler.apply_filters()
         
         # Determine which of the potential columns exists in the DataFrame
@@ -515,10 +559,25 @@ class ExcelFilterApp(ctk.CTk):
             self.read_excel(cdr_file_path)
             self.create_blank_cdr_file(cdr_file_path)
             
-            #text the file to save
+            # Text the file to save
             self.text_excel(save_path)
             self.text_excel(f"C:\\Users\\dell\\Desktop\\{default_filename}")
+            
             messagebox.showinfo("Success", "Filtered Excel file saved successfully.")
+
+            # Open directories and files
+            try:
+                # Open the output directory if it exists
+                output_dir = self.output_dir_label.cget("text")
+                if os.path.isdir(output_dir):
+                    # Convert path to absolute and use raw string to handle special characters
+                    output_dir = os.path.abspath(output_dir)
+                    subprocess.run(['explorer', output_dir], check=False)
+                else:
+                    print(f"Output directory does not exist: {output_dir}")
+
+            except Exception as e:
+                messagebox.showerror("Error", f"An error occurred while opening files: {e}")
     def text_excel(self, file_path):        
         
         # Load the workbook and select the active sheet
@@ -766,6 +825,73 @@ class MethodsHandler():
         self.party = self.master.party_var.get()
         self.artwork = self.master.artwork_var.get()
         
+    def repeat_command(self):
+        # Ask user for the number of times to repeat the process
+        try:
+            num_iterations = 10
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+            return
+            
+        time.sleep(2)
+
+        # Loop for the specified number of iterations
+        for _ in range(num_iterations):
+            # Get current mouse position
+            current_mouse_x, current_mouse_y = pg.position()
+
+            # Hold down Ctrl key
+            pg.keyDown('ctrl')
+
+            # Click at the current mouse position
+            pg.click(current_mouse_x, current_mouse_y)
+
+            # Release Ctrl key
+            pg.keyUp('ctrl')
+
+            # Press Ctrl+R (reload or refresh depending on the context)
+            pg.hotkey('ctrl', 'r')
+
+            # Wait for a brief moment to ensure the page reloads
+            time.sleep(0.3)
+
+            # Press Page Down
+            pg.press('pagedown')
+
+            # Wait for 0.2 seconds before the next iteration
+            time.sleep(0.2)
+        
+    def print_import(self):
+        time.sleep(3)
+        pg.hotkey('ctrl', 'p')
+        time.sleep(2)
+        pg.click(709,572)
+
+        time.sleep(10)
+        pg.click(849,649)
+
+        time.sleep(2)
+        pg.click(795,441)
+
+        time.sleep(2)
+        pg.click(607,745)
+
+        time.sleep(2)
+        pg.click(600,400)
+
+        pg.hotkey('ctrl', 'i')
+
+        time.sleep(2)
+        pg.click(400,140)
+        pg.doubleClick() 
+
+        time.sleep(2)
+        pg.press('enter')
+        time.sleep(2)
+        pg.press('enter')
+        time.sleep(2)
+        pg.press('enter')
+        
     def add_db(self):
         software = self.sample_file_opener()
         if software == "BARTENDER":
@@ -955,6 +1081,5 @@ class MethodsHandler():
         
 
 if __name__ == "__main__":
-    print("Opening the App Please Wait......")
     app = ExcelFilterApp()
     app.mainloop()
