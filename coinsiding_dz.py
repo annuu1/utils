@@ -3,6 +3,8 @@ import pandas as pd
 import mplfinance as mpf
 import matplotlib.pyplot as plt
 import customtkinter as ctk
+import csv
+import os
 
 # Define the main application class
 class DemandZoneApp(ctk.CTk):
@@ -75,9 +77,13 @@ class DemandZoneApp(ctk.CTk):
         self.max_legout_entry = ctk.CTkEntry(self.scrollable_frame, placeholder_text="100")
         self.max_legout_entry.pack(pady=5)
 
-        # Button to trigger demand zone detection
+        # Button to trigger demand zone detection for a single stock
         self.calculate_button = ctk.CTkButton(self.scrollable_frame, text="Detect Demand Zones", command=self.detect_zones)
         self.calculate_button.pack(pady=20)
+
+        # Button to trigger scanning of all Nifty 50 stocks
+        self.scan_all_button = ctk.CTkButton(self.scrollable_frame, text="Scan All Nifty 50 Stocks", command=self.scan_all_nifty50)
+        self.scan_all_button.pack(pady=20)
 
         # Label to display results
         self.output_label = ctk.CTkLabel(self.scrollable_frame, text="")
@@ -150,7 +156,8 @@ class DemandZoneApp(ctk.CTk):
             self.output_label.configure(text="No demand zones detected in the selected time range.")
             return
 
-        # Track the number of fresh, tested, and target zones
+        # Prepare data for CSV export
+        csv_data = []
         fresh_zones = 0
         tested_zones = 0
         target_zones = 0
@@ -165,7 +172,7 @@ class DemandZoneApp(ctk.CTk):
                            returnfig=True,
                            figsize=(15, 10))  # Increased figure size to reduce overlap
 
-        # Add horizontal rays for demand zones and print zone data
+        # Add horizontal rays for demand zones and prepare CSV data
         zone_info = []
         for dz in demand_zones:
             base_candles = dz[2]
@@ -179,19 +186,37 @@ class DemandZoneApp(ctk.CTk):
             color = self.check_zone_tested_and_target(dz, filtered_candles, start_index)
 
             if color == 'green':
+                status = 'Fresh'
                 fresh_zones += 1
             elif color == 'blue':
+                status = 'Tested'
                 tested_zones += 1
             elif color == 'pink':
+                status = 'Target Achieved'
                 target_zones += 1
 
             # Add horizontal rays (lines) from these points extending to the right
             ax[0].hlines(y=highest_high, xmin=filtered_daily_data.index[dz[0]], xmax=filtered_daily_data.index[-1], color=color, linestyle='--', linewidth=1.5)
             ax[0].hlines(y=lowest_low, xmin=filtered_daily_data.index[dz[0]], xmax=filtered_daily_data.index[-1], color=color, linestyle='--', linewidth=1.5)
 
-            # Collect zone data for display
+            # Define leg-in and leg-out candles
             legin_candle = filtered_candles[dz[0]]
             legout_candle = filtered_candles[dz[1]]
+
+            # Map the corresponding monthly demand zone
+            higher_timeframe_zone = None
+            for monthly_zone in monthly_demand_zones:
+                if filtered_daily_data.index[dz[0]] >= monthly_data.index[monthly_zone[0]] and filtered_daily_data.index[dz[1]] <= monthly_data.index[monthly_zone[1]]:
+                    higher_timeframe_zone = monthly_zone
+                    break
+
+            if higher_timeframe_zone:
+                higher_legin_candle = monthly_candles[higher_timeframe_zone[0]]
+                higher_legout_candle = monthly_candles[higher_timeframe_zone[1]]
+            else:
+                higher_legin_candle = None
+                higher_legout_candle = None
+
             zone_info.append(
                 f"Leg-In: {legin_candle.date} Price: {legin_candle.close}\n"
                 f"Leg-Out: {legout_candle.date} Price: {legout_candle.close}\n"
@@ -199,7 +224,23 @@ class DemandZoneApp(ctk.CTk):
                 f"Zone High: {highest_high}, Zone Low: {lowest_low}\n"
             )
 
+            csv_data.append({
+                "Symbol": symbol,
+                "Leg-In Time": legin_candle.date,
+                "Leg-Out Time": legout_candle.date,
+                "Zone High": highest_high,
+                "Zone Low": lowest_low,
+                "Status": status,
+                "Higher Timeframe Leg-In Time": higher_legin_candle.date if higher_legin_candle else "N/A",
+                "Higher Timeframe Leg-Out Time": higher_legout_candle.date if higher_legout_candle else "N/A",
+                "Higher Timeframe Zone High": higher_legin_candle.high if higher_legin_candle else "N/A",
+                "Higher Timeframe Zone Low": higher_legout_candle.low if higher_legout_candle else "N/A"
+            })
+
         plt.show()
+
+        # Write data to CSV
+        self.write_to_csv(csv_data)
 
         # Display zone information
         output_text = (f"Number of fresh zones: {fresh_zones}\n"
@@ -207,6 +248,141 @@ class DemandZoneApp(ctk.CTk):
                        f"Number of zones that met 1:2 target: {target_zones}\n\n"
                        f"Detected Zones Information:\n" + "\n".join(zone_info))
         self.output_label.configure(text=output_text)
+
+    def scan_all_nifty50(self):
+        nifty50_symbols = [
+            "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "HINDUNILVR.NS", "ICICIBANK.NS", 
+            "KOTAKBANK.NS", "HDFC.NS", "BHARTIARTL.NS", "ITC.NS", "LT.NS", "SBIN.NS", 
+            "ASIANPAINT.NS", "AXISBANK.NS", "BAJFINANCE.NS", "HCLTECH.NS", "MARUTI.NS", 
+            "HDFCLIFE.NS", "SUNPHARMA.NS", "WIPRO.NS", "ULTRACEMCO.NS", "ONGC.NS", "POWERGRID.NS", 
+            "TITAN.NS", "NTPC.NS", "GRASIM.NS", "INDUSINDBK.NS", "NESTLEIND.NS", "JSWSTEEL.NS", 
+            "BAJAJFINSV.NS", "TATASTEEL.NS", "BPCL.NS", "M&M.NS", "DRREDDY.NS", "DIVISLAB.NS", 
+            "HEROMOTOCO.NS", "ADANIPORTS.NS", "CIPLA.NS", "COALINDIA.NS", "SHREECEM.NS", 
+            "TECHM.NS", "BRITANNIA.NS", "EICHERMOT.NS", "HINDALCO.NS", "TATACONSUM.NS", 
+            "APOLLOHOSP.NS", "ADANIENT.NS", "UPL.NS", "SBILIFE.NS"
+        ]
+
+        start_date = self.start_date_entry.get() or "2023-01-01"
+        end_date = self.end_date_entry.get() or "2023-12-31"
+        min_legin_pct = float(self.min_legin_entry.get() or "50")
+        max_legin_pct = float(self.max_legin_entry.get() or "100")
+        min_base = int(self.min_base_entry.get() or "1")
+        max_base = int(self.max_base_entry.get() or "5")
+        min_base_pct = float(self.min_base_pct_entry.get() or "0")
+        max_base_pct = float(self.max_base_pct_entry.get() or "50")
+        min_legout_pct = float(self.min_legout_entry.get() or "50")
+        max_legout_pct = float(self.max_legout_entry.get() or "100")
+
+        csv_data = []
+
+        for symbol in nifty50_symbols:
+            # Fetch monthly data for the given symbol
+            monthly_data = yf.download(symbol, start=start_date, end=end_date, interval="1mo")
+
+            # Convert monthly data to a list of Candle objects
+            monthly_candles = []
+            for idx, row in monthly_data.iterrows():
+                monthly_candles.append(Candle(row['Open'], row['High'], row['Low'], row['Close'], idx))
+
+            # Detect monthly demand zones
+            monthly_demand_zones = self.detect_demand_zones(
+                monthly_candles, min_legin_pct, max_legin_pct, min_base, max_base, min_base_pct, max_base_pct, min_legout_pct, max_legout_pct
+            )
+
+            if not monthly_demand_zones:
+                continue
+
+            # Fetch daily data for the given symbol
+            daily_data = yf.download(symbol, start=start_date, end=end_date, interval="1d")
+
+            # Filter daily data based on the detected monthly demand zones
+            filtered_daily_data = pd.DataFrame()
+            for dz in monthly_demand_zones:
+                first_base_date = monthly_data.index[dz[0]]
+                last_base_date = monthly_data.index[dz[1]]
+
+                filtered_data = daily_data.loc[first_base_date:last_base_date]
+                
+                # Ensure the filtered data has a DatetimeIndex
+                filtered_data.index = pd.to_datetime(filtered_data.index)
+                
+                filtered_daily_data = pd.concat([filtered_daily_data, filtered_data])
+
+            # Reset the index to ensure it's a proper DatetimeIndex after filtering
+            filtered_daily_data.index = pd.to_datetime(filtered_daily_data.index)
+
+            if filtered_daily_data.empty:
+                continue
+
+            # Convert filtered daily data to Candle objects
+            filtered_candles = []
+            for idx, row in filtered_daily_data.iterrows():
+                filtered_candles.append(Candle(row['Open'], row['High'], row['Low'], row['Close'], idx))
+
+            # Detect demand zones in the filtered daily data
+            demand_zones = self.detect_demand_zones(
+                filtered_candles, min_legin_pct, max_legin_pct, min_base, max_base, min_base_pct, max_base_pct, min_legout_pct, max_legout_pct
+            )
+
+            if not demand_zones:
+                continue
+
+            # Prepare CSV data
+            for dz in demand_zones:
+                base_candles = dz[2]
+
+                # Find the highest high and lowest low of the base candles
+                highest_high = max(candle.high for candle in base_candles)
+                lowest_low = min(candle.low for candle in base_candles)
+
+                # Define leg-in and leg-out candles
+                legin_candle = filtered_candles[dz[0]]
+                legout_candle = filtered_candles[dz[1]]
+
+                # Map the corresponding monthly demand zone
+                higher_timeframe_zone = None
+                for monthly_zone in monthly_demand_zones:
+                    if filtered_daily_data.index[dz[0]] >= monthly_data.index[monthly_zone[0]] and filtered_daily_data.index[dz[1]] <= monthly_data.index[monthly_zone[1]]:
+                        higher_timeframe_zone = monthly_zone
+                        break
+
+                if higher_timeframe_zone:
+                    higher_legin_candle = monthly_candles[higher_timeframe_zone[0]]
+                    higher_legout_candle = monthly_candles[higher_timeframe_zone[1]]
+                else:
+                    higher_legin_candle = None
+                    higher_legout_candle = None
+
+                status = self.check_zone_tested_and_target(dz, filtered_candles, dz[1] + 1)
+
+                csv_data.append({
+                    "Symbol": symbol,
+                    "Leg-In Time": legin_candle.date,
+                    "Leg-Out Time": legout_candle.date,
+                    "Zone High": highest_high,
+                    "Zone Low": lowest_low,
+                    "Status": status,
+                    "Higher Timeframe Leg-In Time": higher_legin_candle.date if higher_legin_candle else "N/A",
+                    "Higher Timeframe Leg-Out Time": higher_legout_candle.date if higher_legout_candle else "N/A",
+                    "Higher Timeframe Zone High": higher_legin_candle.high if higher_legin_candle else "N/A",
+                    "Higher Timeframe Zone Low": higher_legout_candle.low if higher_legout_candle else "N/A"
+                })
+
+        # Write the accumulated data to CSV
+        self.write_to_csv(csv_data)
+
+        # Update the output label
+        self.output_label.configure(text=f"Nifty 50 stocks scan completed. Data saved to CSV.")
+
+    def write_to_csv(self, csv_data):
+        if csv_data:
+            csv_file = 'demand_zone_data.csv'
+            csv_file_exists = os.path.exists(csv_file)
+            with open(csv_file, mode='a', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=csv_data[0].keys())
+                if not csv_file_exists:
+                    writer.writeheader()  # Write the header only if the file does not exist
+                writer.writerows(csv_data)
 
     def detect_demand_zones(self, candles, min_legin_pct, max_legin_pct, min_base, max_base, min_base_pct, max_base_pct, min_legout_pct, max_legout_pct):
         demand_zones = []
@@ -248,12 +424,12 @@ class DemandZoneApp(ctk.CTk):
                 # Check if the price hits the 1:2 target after entering the zone
                 for m in range(k, len(candles)):
                     if candles[m].high >= target_price:
-                        return 'pink'  # Zone achieved 1:2 target
+                        return 'Target Achieved'  # Zone achieved 1:2 target
                     if candles[m].low < lowest_low:
-                        return 'blue'  # Zone was broken before achieving target
+                        return 'Tested'  # Zone was broken before achieving target
                 break
 
-        return 'green'  # Zone has not been tested
+        return 'Fresh'  # Zone has not been tested
 
     def is_legin_candle(self, candle, min_legin_pct, max_legin_pct):
         return min_legin_pct <= candle.body_percentage <= max_legin_pct
